@@ -58,6 +58,63 @@ cmd_info() {
   log "All checks complete."
 }
 
+create_project_from_templates() {
+  local target_dir="$1"
+
+  log "Creating directory structure..."
+  mkdir -p "$target_dir"
+  mkdir -p "$target_dir/src/main/kotlin"
+  mkdir -p "$target_dir/src/main/haiku"
+  mkdir -p "$target_dir/src/test/kotlin"
+  mkdir -p "$target_dir/gradle"
+  mkdir -p "$target_dir/.github/workflows"
+
+  if [[ "$dry_run" != "true" ]]; then
+    # Create source directory structure based on package
+    local package_path
+    package_path=$(echo "$PROJECT_PACKAGE" | tr '.' '/')
+    mkdir -p "$target_dir/src/main/kotlin/$package_path"
+    mkdir -p "$target_dir/src/test/kotlin/$package_path"
+
+    # Render all templates
+    log "Rendering templates..."
+
+    # Common files
+    safe_render_template "common/.editorconfig" "$target_dir" "$force" "false"
+    safe_render_template "common/.gitattributes" "$target_dir" "$force" "true"
+    safe_render_template "common/.gitignore" "$target_dir" "$force" "true"
+    safe_render_template "common/README.md" "$target_dir" "$force" "true"
+
+    # Gradle files
+    safe_render_template "kts/build.gradle.kts" "$target_dir" "$force" "true"
+    safe_render_template "kts/settings.gradle.kts" "$target_dir" "$force" "true"
+    safe_render_template "kts/gradle/libs.versions.toml" "$target_dir/gradle" "$force" "true"
+
+    # Source files
+    render_source_file "kts/src/main/kotlin/App.kt.template" "$target_dir/src/main/kotlin/$package_path/App.kt"
+    render_source_file "kts/src/test/kotlin/AppTest.kt.template" "$target_dir/src/test/kotlin/$package_path/AppTest.kt"
+
+    # Create empty haiku directory with .gitkeep
+    touch "$target_dir/src/main/haiku/.gitkeep"
+
+    # CI workflow
+    safe_render_template "ci/github/.github/workflows/ci.yml" "$target_dir/.github/workflows" "$force" "true"
+  fi
+}
+
+render_source_file() {
+  local template_path="$1"
+  local dest_path="$2"
+
+  log "Generating $(realpath --relative-to="$PWD" "$dest_path")"
+
+  # Create directory if it doesn't exist
+  mkdir -p "$(dirname "$dest_path")"
+
+  # Render template
+  render "$TEMPLATE_DIR/$template_path" "$dest_path"
+}
+
 # --- Command: init ---
 
 # Renders a single template file to a destination, substituting variables.
@@ -107,38 +164,6 @@ safe_render_template() {
   log "Generating $(realpath --relative-to="$PWD" "$dest_path")"
   render "$src_path" "$dest_path"
 }
-
-# Appends a patch to a file if the managed markers are not present.
-apply_patch() {
-  local patch_name="$1"
-  local target_file="$2"
-
-  local patch_file="${TEMPLATE_DIR}/kts/${patch_name}"
-  local marker="Section managed by haiku-gradle"
-
-  if grep -q "$marker" "$target_file"; then
-    warn "Markers already exist in $(realpath --relative-to="$PWD" "$target_file"), skipping patch."
-    return
-  fi
-
-  log "Patching $(realpath --relative-to="$PWD" "$target_file")"
-  # Render the patch to a temporary file
-  local temp_patch
-  temp_patch=$(mktemp)
-  render "$patch_file" "$temp_patch"
-
-  # Prepend the rendered patch to the target file
-  local original_content
-  original_content=$(cat "$target_file")
-
-  # Write the patch first, then the original content.
-  cat "$temp_patch" > "$target_file"
-  echo "" >> "$target_file" # Add a newline
-  echo "$original_content" >> "$target_file"
-
-  rm "$temp_patch"
-}
-
 
 cmd_init() {
   # --- Default values ---
@@ -192,6 +217,8 @@ cmd_init() {
   export PROJECT_NAME="$project_name"
   export PROJECT_PACKAGE="$project_package"
   export JAVA_VERSION="$java_version"
+  export GRADLE_VERSION="8.8"
+  export HAIKU_VERSION="1.0.0"
 
   log "Project Configuration:"
   echo -e "  ${C_CYAN}Project Name:${C_RESET}  ${project_name}"
@@ -214,60 +241,15 @@ cmd_init() {
   fi
   mkdir -p "$target_dir"
 
-  # --- Run gradle init ---
-  local gradle_type="kotlin-application"
-  if [[ "$type" == "lib" ]]; then
-    gradle_type="kotlin-library"
-  fi
-
-  log "Running 'gradle init'..."
+  # --- Create project from templates ---
+  log "Creating project from Haiku-Gradle templates..."
   if [[ "$dry_run" != "true" ]]; then
-    gradle init \
-      --type "$gradle_type" \
-      --dsl "kotlin" \
-      --project-name "$project_name" \
-      --package "$project_package" \
-      --no-incubating \
-      --project-dir "$target_dir"
-  fi
+    create_project_from_templates "$target_dir"
 
-  # --- Modify Gradle Init Output ---
-  if [[ "$dry_run" != "true" ]]; then
-    if [[ "$type" == "app" ]]; then
-      local app_build_gradle="${target_dir}/app/build.gradle.kts"
-      if [[ -f "$app_build_gradle" ]]; then
-        log "Removing default Guava dependency from app build script..."
-        sed -i '/libs.guava/d' "$app_build_gradle"
-      fi
-    fi
-  fi
-
-  # --- Copy and Render Templates ---
-  log "Applying haiku-gradle templates..."
-  if [[ "$dry_run" != "true" ]]; then
-    # Copy common files
-    safe_render_template "common/.editorconfig" "$target_dir" "$force" "false"
-    safe_render_template "common/.gitattributes" "$target_dir" "$force" "true"
-    safe_render_template "common/.gitignore" "$target_dir" "$force" "true"
-    safe_render_template "common/README.md" "$target_dir" "$force" "true"
-
-    # Copy version catalog
-    safe_render_template "kts/gradle/libs.versions.toml" "${target_dir}/gradle" "$force" "true"
-
-    # Copy CI workflow
-    mkdir -p "${target_dir}/.github/workflows"
-    safe_render_template "ci/github/.github/workflows/ci.yml" "${target_dir}/.github/workflows" "$force" "true"
-
-    # Apply patches
-    local build_gradle_path="${target_dir}/build.gradle.kts"
-    if [[ "$type" == "app" ]]; then
-      # For apps, gradle init creates a subproject.
-      build_gradle_path="${target_dir}/app/build.gradle.kts"
-    fi
-    apply_patch "settings.gradle.kts.patch" "${target_dir}/settings.gradle.kts"
-    apply_patch "build.gradle.kts.patch" "$build_gradle_path"
-
-    # Sample App.kt is generated by gradle init, so we don't need to do anything.
+    # Generate wrapper files only
+    log "Generating Gradle wrapper files..."
+    cd "$target_dir"
+    gradle wrapper --gradle-version "$GRADLE_VERSION"
   fi
 
   log "${C_GREEN}Project '${project_name}' created successfully!${C_RESET}"
@@ -275,6 +257,7 @@ cmd_init() {
   log "Next steps:"
   echo "  cd ${path}"
   echo "  ./gradlew build"
+  echo "  Add haiku files to src/main/haiku/"
 }
 
 cmd_upgrade() {
