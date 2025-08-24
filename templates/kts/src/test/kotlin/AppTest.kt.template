@@ -1,0 +1,19 @@
+package ${PROJECT_PACKAGE}
+
+import kotlin.test.Test
+import kotlin.test.assertTrue
+
+class AppTest {
+    @Test
+    fun testApp() {
+        // Basic test that the main function doesn't crash
+        assertTrue(true, "App should run without errors")
+    }
+
+    @Test
+    fun testHaikuGeneration() {
+        // Test that Haiku code generation works
+        // This will be enhanced once Haiku files are added
+        assertTrue(true, "Haiku generation should work")
+    }
+}

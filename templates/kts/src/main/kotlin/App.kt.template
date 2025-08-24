@@ -1,0 +1,12 @@
+package ${PROJECT_PACKAGE}
+
+import ${PROJECT_PACKAGE}.generated.HaikuLoader
+
+fun main() {
+    println("Hello from ${PROJECT_NAME}!")
+
+    // Example of using generated Haiku code
+    val haiku = HaikuLoader.loadRandomHaiku()
+    println("Today's haiku:")
+    println(haiku)
+}

@@ -1,6 +1,7 @@
 [versions]
 kotlin = "1.9.25"
 junit = "5.10.3"
+haikuversion = "1.0.0"
 
 [libraries]
 junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
@@ -8,5 +9,9 @@ junit-jupiter-engine = { module = "org.junit.jupiter:junit-jupiter-engine" }
 kotlin-test-junit5 = { module = "org.jetbrains.kotlin:kotlin-test-junit5", version.ref = "kotlin" }
 junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
 
+# Haiku dependencies
+haiku-core = { module = "com.braveinnov:haiku-core", version.ref = "haikuversion" }
+
 [plugins]
 jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+haiku-plugin = { id = "com.braveinnov.haiku.plugin", version.ref = "haikuversion" }
